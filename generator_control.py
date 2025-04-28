@@ -29,14 +29,6 @@ REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
 
 EXCEPTION_THRESHOLD = 10
 
-# TODO Update the ramp function to look for the AC input 1 voltage to stabilise before beginning the timer.
-# Parameters for generator ramp function
-GENSET_INTIAL_RAMP_TIME = 5 # May need to increase this as it takes a while for the DSE to actually start after signal
-GENSET_WARMUP_TIME = 30
-GENSET_FULLPOWER_RAMP_TIME = 10
-GENSET_WARMUP_CURRENT_LIMIT = 20
-GENSET_FULLPOWER_CURRENT_LIMIT = 50
-
 PROFILEMEMORY = True
 
 if PROFILEMEMORY:
@@ -66,8 +58,6 @@ class GeneratorController():
         self.input_values = {}
         self.relay_states = {}
         self.inverter_delay = 0
-        self.generator_ramp_timer = 0
-        self.ac_input_current_limit_ramp_target = 0
 
         self._last_log = {}
         self.duplicate_log_counter = {}
@@ -342,17 +332,6 @@ class GeneratorController():
             self.AC_Output_Power = None
             self.clear_dbus_item("ac_output_power")
 
-    def update_ac_input_current_limit(self):
-        val = self.get_dbus_value("ac_input_current_limit")
-        if val is not None:
-            self.Inverter_Connected = True
-            self.AC_InputCurrentLimit = round(val, 1)
-        else:
-            self.Inverter_Connected = False
-            print("Did not receive data from inverter", flush=True)
-            self.AC_InputCurrentLimit = None
-            self.clear_dbus_item("ac_input_current_limit")
-
     def update_inverter_switch_mode(self):
         val = self.get_dbus_value("inverter_switch_mode")
         if val is not None:
@@ -365,8 +344,6 @@ class GeneratorController():
 
     def update_relay_states(self):
         self.relay_states = {}
-        for relay_no in range(0, 2):
-            self.relay_states[relay_no] = self.get_dbus_value(f"relay_{relay_no}")
         self.relay_states[2] = self.Off_LED_Feedback
         self.relay_states[3] = self.On_LED_Feedback
         self.relay_states[4] = self.Charge_LED_Feedback
@@ -464,32 +441,6 @@ class GeneratorController():
         elif (self.Reverse_Power_Counter == 0):  # Only reset if it has counted back down to 0
             self.Reverse_Power_Alarm = False
 
-    def update_generator_ramp_timer(self):
-        if self.relay_states[0] : # relay[0] is the generator remote start signal
-            self.generator_ramp_timer += 1
-        else:
-            self.generator_ramp_timer = 0
-
-    def update_ac_input_current_limit_ramp_target(self):
-        if self.generator_ramp_timer <= GENSET_INTIAL_RAMP_TIME:
-            self.ac_input_current_limit_ramp_target = max(1, (self.generator_ramp_timer / GENSET_INTIAL_RAMP_TIME) * GENSET_WARMUP_CURRENT_LIMIT)
-        elif self.generator_ramp_timer <= (GENSET_INTIAL_RAMP_TIME + GENSET_WARMUP_TIME):
-            self.ac_input_current_limit_ramp_target = GENSET_WARMUP_CURRENT_LIMIT
-        elif self.generator_ramp_timer <= (GENSET_INTIAL_RAMP_TIME + GENSET_WARMUP_TIME + GENSET_FULLPOWER_RAMP_TIME):
-            self.ac_input_current_limit_ramp_target = ((self.generator_ramp_timer - (GENSET_INTIAL_RAMP_TIME + GENSET_WARMUP_TIME)) / GENSET_FULLPOWER_RAMP_TIME) * (GENSET_FULLPOWER_CURRENT_LIMIT - GENSET_WARMUP_CURRENT_LIMIT) + GENSET_WARMUP_CURRENT_LIMIT
-        else:
-            self.ac_input_current_limit_ramp_target = GENSET_FULLPOWER_CURRENT_LIMIT
-
-    def set_ac_input_current_limit(self):
-        if self.AC_InputCurrentLimit != self.ac_input_current_limit_ramp_target:  # Only Update the current limit when target changes.
-            if (self.Battery_Contactors_Closed): # Only attempt to contol the inverter if the 48V system has become live already
-                if self.inverter_delay == 0:
-                    self.set_dbus_value("ac_input_current_limit", self.ac_input_current_limit_ramp_target)
-                    print(f"Updating AC Current Limit from {self.AC_InputCurrentLimit} to {self.ac_input_current_limit_ramp_target}.", flush=True)
-                else:
-                    print(f"Waiting {self.inverter_delay}s before updating ac input current limit")
-                    # inverter_delay is decremented elsewhere.
-
     def run(self):
         self.check_stored_state()
 
@@ -505,15 +456,11 @@ class GeneratorController():
             self.update_battery_limits()
             if self.Mode == "On" or self.Mode == "ChargeOnly":
                 self.update_ac_output_power()
-                self.update_ac_input_current_limit()
             self.check_reverse_power()
             self.update_relay_states()
             self.set_outputs()
             self.update_inverter_switch_mode()
             self.set_inverter_switch_mode()
-            self.update_generator_ramp_timer()
-            self.update_ac_input_current_limit_ramp_target()
-            self.set_ac_input_current_limit()
 
             if (self.Service_Restart_Requested):
                 print("Service Restart Requested, Going Down in 5s!", flush=True)
@@ -544,8 +491,7 @@ class GeneratorController():
                 else:
                     print(f"{log_type}: {log[log_type]}".expandtabs(4))
             else:
-                # print(f"{log_type}: No Change")
-                pass
+                print(f"{log_type}: No Change")
             self._last_log[log_type] = log[log_type]
         sys.stdout.flush()
 
@@ -574,9 +520,6 @@ class GeneratorController():
             f"SOC {self.Battery_SOC}%",
             f"Lims {self.Battery_Charge_Limit}A/{self.Battery_Discharge_Limit}A",
             f"AC Out {self.AC_Output_Power}W",
-            f"AC In Curr Lim {self.AC_InputCurrentLimit}A",
-            f"Target {self.ac_input_current_limit_ramp_target}A",
-            f"Gen Ramp {self.generator_ramp_timer}s",
             f"Inv Mode {self.Inverter_Switch_Mode_Target}/{self.Inverter_Switch_Mode}",
             f"Rev Pwr {self.Reverse_Power_Detected} - {self.Reverse_Power_Counter * TIMESTEP}s",
             # f"Off LED {self.Off_LED}",
