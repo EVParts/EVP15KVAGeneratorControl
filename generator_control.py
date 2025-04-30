@@ -51,18 +51,20 @@ class GeneratorController():
         self.AC_InputCurrentLimit = None
         self.Inverter_Switch_Mode = 0
         self.Reverse_Power_Counter = 0
+        self.disco_led_counter = 0
         self.Reverse_Power_Alarm = False
         self.Reverse_Power_Shutdown = False
+        self.estop_shutdown = False
         self.Inverter_Connected = False
         self.BMS_Connected = False
         self.input_values = {}
         self.relay_states = {}
+        self.quattro_leds = {}
         self.inverter_delay = 0
 
         self._last_log = {}
         self.duplicate_log_counter = {}
 
-        self.outputs_str = ""
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
@@ -88,6 +90,8 @@ class GeneratorController():
             "relay_7": {"service": "com.victronenergy.system", "path": "/Relay/7/State"},
             "relay_8": {"service": "com.victronenergy.system", "path": "/Relay/8/State"},
             "relay_9": {"service": "com.victronenergy.system", "path": "/Relay/9/State"},
+            "quattro_inverter_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Inverter"},
+            "quattro_mains_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Mains"},
         }
 
         self.dbus_items = {}
@@ -230,6 +234,16 @@ class GeneratorController():
         if self.Off_Button_Pressed_Counter >= 5:
             self.BMS_Disable = True
 
+        if (self.Mode != "Off") and ((self.quattro_leds["mains"] == 3) and (self.quattro_leds["inverter"] == 2)):
+            self.disco_led_counter += 1
+        else:
+            self.disco_led_counter = 0
+
+        if self.disco_led_counter >= 5:
+            self.estop_shutdown = True
+        else:
+            self.estop_shutdown = False
+
         if ((self.Off_Button_Pressed) and (self.Charge_Button_Pressed) and not (self.On_Button_Pressed)):
             self.DSE_Panel_Lock_Mode_Request = False
 
@@ -237,6 +251,9 @@ class GeneratorController():
             self.Mode = "Off"
         elif self.Reverse_Power_Alarm:
             self.Reverse_Power_Shutdown = True
+            self.Mode = "Off"
+            self.Mode = "Off"
+        elif self.estop_shutdown == True:
             self.Mode = "Off"
         elif self.On_Button_Pressed and not (self.Off_Button_Pressed or self.Charge_Button_Pressed):
             self.Mode = "On"
@@ -351,6 +368,10 @@ class GeneratorController():
         for relay_no in range(6, 10):
             self.relay_states[relay_no] = self.get_dbus_value(f"relay_{relay_no}")
 
+    def update_qauttro_led_states(self):
+        self.quattro_leds["inverter"] = self.get_dbus_value(f"quattro_inverter_led")
+        self.quattro_leds["mains"] = self.get_dbus_value(f"quattro_mains_led")
+
 
     def set_off_led(self):
         if self.Off_LED and self.Fault_Detected:
@@ -451,6 +472,7 @@ class GeneratorController():
             t0 = time()
             self.check_and_create_connections()
             self.update_inputs()
+            self.update_qauttro_led_states()
             self.update_mode()
             self.update_battery_soc()
             self.update_battery_limits()
@@ -476,10 +498,10 @@ class GeneratorController():
             if counter % 30 == 0:
                 self.store_state()
 
-            sleep(max(0, TIMESTEP - (time() - t0)))
+            sleep(max(0.0, TIMESTEP - (time() - t0)))
 
     def log_state(self):
-        log = {"Inputs": self.input_values, "Relays": self.relay_states, "State": str(self)}
+        log = {"Inputs": self.input_values, "Relays": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
                 self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
@@ -515,13 +537,13 @@ class GeneratorController():
 
     def __repr__(self):
         return ',\t'.join([
-            # f"Relays {self.outputs_str}",
             f"Mode {self.Mode}",
             f"SOC {self.Battery_SOC}%",
             f"Lims {self.Battery_Charge_Limit}A/{self.Battery_Discharge_Limit}A",
             f"AC Out {self.AC_Output_Power}W",
             f"Inv Mode {self.Inverter_Switch_Mode_Target}/{self.Inverter_Switch_Mode}",
             f"Rev Pwr {self.Reverse_Power_Detected} - {self.Reverse_Power_Counter * TIMESTEP}s",
+            f"Estop {self.estop_shutdown}/{self.disco_led_counter}s",
             # f"Off LED {self.Off_LED}",
             # f"On LED {self.On_LED}",
             # f"Charge LED {self.Charge_LED}",
