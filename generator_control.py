@@ -29,7 +29,8 @@ REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
 
 EXCEPTION_THRESHOLD = 10
 
-PROFILEMEMORY = True
+# Caused a crash on newer generators?
+PROFILEMEMORY = False
 
 if PROFILEMEMORY:
     import tracemalloc
@@ -213,7 +214,7 @@ class GeneratorController():
     def Battery_Contactors_Closed(self):
         val = (self.Battery_Charge_Limit) and (self.Battery_Discharge_Limit) # Non-zero current limits means that 48V system is online
         if val == False:
-            self.inverter_delay = 0
+            self.inverter_delay = 10
         return val
 
     @property
@@ -240,6 +241,7 @@ class GeneratorController():
             self.disco_led_counter = 0
 
         if self.disco_led_counter >= 5:
+            print("The 'disco' lights are stuck on on the quattro, AC safety loop may have tripped (EStop?)")
             self.estop_shutdown = True
         else:
             self.estop_shutdown = False
@@ -588,7 +590,7 @@ class GeneratorController():
 
             age = (time() - state.get("Time", 0))
             if age < 120:
-                print(f"Found a stored state dump which is less than 60s old ({age}s)", flush=True)
+                print(f"Found a stored state dump which is less than 120s old ({age}s)", flush=True)
                 if self.system_uptime() > state.get("Time", 0):
                     print("System reboot detected more recently than stored state, ignoring stored state.", flush=True)
                 else:

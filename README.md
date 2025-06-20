@@ -35,7 +35,7 @@ Set the IP Address for the Victron to match the IP/subnet of the DTWonder.
 
 ###
 Add EVP15KVAGeneratorControl Package Via Github
-In package manager, select Inactive Packages. The choose new and fill in the details.
+In package manager, select Inactive Packages. Then choose new and fill in the details.
 EVP15KVAGeneratorControl
 EVParts
 release
@@ -43,3 +43,12 @@ release
 
 # TODO 
 Need to get second Ekrano working and then complete the documentation.
+
+
+Specify versions for guimods and remotegpio
+
+
+# SSH Log Checking
+
+logs are in /var/log/generator_control
+
