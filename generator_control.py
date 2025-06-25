@@ -44,7 +44,7 @@ class GeneratorController():
         self._inverter_switch_mode_update_time = 0
         self.Off_Button_Pressed_Counter = 0
         self.BMS_Disable = False
-        self.DSE_Panel_Lock_Mode_Request = False
+        self.DSE_Panel_Lock_Mode_Request = True
         self.Battery_SOC = 0
         self.Battery_Charge_Limit = 0
         self.Battery_Discharge_Limit = 0
