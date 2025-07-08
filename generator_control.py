@@ -115,6 +115,9 @@ class GeneratorController():
         if (self.Reverse_Power_Shutdown == True) or (self.Reverse_Power_Alarm == True):
             print("Reverse Power Fault", flush=True)
             return True
+        if (self.estop_shutdown == True):
+            print("EStop/AC Safety Loop Fault", flush=True)
+            return True
         return False
 
     # if self.Relays_Connected == False:
