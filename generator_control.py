@@ -48,6 +48,7 @@ class GeneratorController():
         self.Battery_SOC = 0
         self.Battery_Charge_Limit = 0
         self.Battery_Discharge_Limit = 0
+        self.Battery_Contactors_Closed_Time = 0
         self.AC_Output_Power = None
         self.AC_InputCurrentLimit = None
         self.Inverter_Switch_Mode = 0
@@ -132,8 +133,14 @@ class GeneratorController():
 
     def read_input(self, input_no):
         path = f"/dev/gpio/digital_input_{input_no}/value"
-        with open(path) as f:
-            return 1 if (f.read().strip() == '1') else 0
+        try:
+            with open(path) as f:
+                return 1 if (f.read().strip() == '1') else 0
+        except FileNotFoundError as e:
+            print(e)
+            print(f"returning 0 as cannot read input #{input_no}")
+            return 0
+
 
     @property
     def Off_Button_Pressed(self):
