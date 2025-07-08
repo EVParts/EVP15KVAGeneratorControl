@@ -26,8 +26,8 @@ DEFAULT_MODE = "Off"
 
 TIMESTEP = 1
 REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
-
-EXCEPTION_THRESHOLD = 10
+DISCO_LED_THRESHOLD = 30 / TIMESTEP # Time for which the Quattro must show disco LEDs before triggering an EStop Shutdown.
+INVERTER_ON_DELAY = 60 / TIMESTEP # Delay for which the Battery contactors must be closed before the alarms which can shut down ths system start counting
 
 # Caused a crash on newer generators?
 PROFILEMEMORY = False
@@ -205,7 +205,7 @@ class GeneratorController():
 
     @property
     def Reverse_Power_Detected(self):
-        if self.AC_Output_Power is not None:
+        if self.Quattro_Alarms_Valid and (self.AC_Output_Power is not None):
             return self.AC_Output_Power < REVERSE_POWER_THRESHOLD
         else:
             return False
@@ -215,7 +215,14 @@ class GeneratorController():
         val = (self.Battery_Charge_Limit) and (self.Battery_Discharge_Limit) # Non-zero current limits means that 48V system is online
         if val == False:
             self.inverter_delay = 10
+            self.Battery_Contactors_Closed_Time = 0
+        else:
+            self.Battery_Contactors_Closed_Time += 1
         return val
+
+    @property
+    def Quattro_Alarms_Valid(self):
+        return (self.Battery_Contactors_Closed_Time > INVERTER_ON_DELAY)
 
     @property
     def Generator_Start_Requested(self):
@@ -235,16 +242,7 @@ class GeneratorController():
         if self.Off_Button_Pressed_Counter >= 5:
             self.BMS_Disable = True
 
-        if (self.Mode != "Off") and ((self.quattro_leds["mains"] == 3) and (self.quattro_leds["inverter"] == 2)):
-            self.disco_led_counter += 1
-        else:
-            self.disco_led_counter = 0
 
-        if self.disco_led_counter >= 5:
-            print("The 'disco' lights are stuck on on the quattro, AC safety loop may have tripped (EStop?)")
-            self.estop_shutdown = True
-        else:
-            self.estop_shutdown = False
 
         if ((self.Off_Button_Pressed) and (self.Charge_Button_Pressed) and not (self.On_Button_Pressed)):
             self.DSE_Panel_Lock_Mode_Request = False
@@ -253,7 +251,6 @@ class GeneratorController():
             self.Mode = "Off"
         elif self.Reverse_Power_Alarm:
             self.Reverse_Power_Shutdown = True
-            self.Mode = "Off"
             self.Mode = "Off"
         elif self.estop_shutdown == True:
             self.Mode = "Off"
@@ -425,7 +422,7 @@ class GeneratorController():
 
     def set_inverter_switch_mode(self):
         if self.Inverter_Switch_Mode_Target != self.Inverter_Switch_Mode:  # Only Update the switch mode when it changes.
-            if (self.Battery_Contactors_Closed): # Only attempt to contol the inverter if the 48V system has become live already
+            if (self.Battery_Contactors_Closed): # Only attempt to control the inverter if the 48V system has become live already
                 if self.inverter_delay == 0:
                     if (time() - self._inverter_switch_mode_update_time) > 5:
                         self._inverter_switch_mode_update_time = time()
@@ -464,6 +461,18 @@ class GeneratorController():
         elif (self.Reverse_Power_Counter == 0):  # Only reset if it has counted back down to 0
             self.Reverse_Power_Alarm = False
 
+    def check_estop_alarm(self):
+        if self.Quattro_Alarms_Valid and (self.Mode != "Off") and ((self.quattro_leds["mains"] == 3) and (self.quattro_leds["inverter"] == 2)):
+            self.disco_led_counter += 1
+        else:
+            self.disco_led_counter = 0
+
+        if self.disco_led_counter >= DISCO_LED_THRESHOLD:
+            print("The 'disco' lights are stuck on on the quattro, AC safety loop may have tripped (EStop?)")
+            self.estop_shutdown = True
+        else:
+            self.estop_shutdown = False
+
     def run(self):
         self.check_stored_state()
 
@@ -481,6 +490,7 @@ class GeneratorController():
             if self.Mode == "On" or self.Mode == "ChargeOnly":
                 self.update_ac_output_power()
             self.check_reverse_power()
+            self.check_estop_alarm()
             self.update_relay_states()
             self.set_outputs()
             self.update_inverter_switch_mode()
@@ -545,7 +555,7 @@ class GeneratorController():
             f"AC Out {self.AC_Output_Power}W",
             f"Inv Mode {self.Inverter_Switch_Mode_Target}/{self.Inverter_Switch_Mode}",
             f"Rev Pwr {self.Reverse_Power_Detected} - {self.Reverse_Power_Counter * TIMESTEP}s",
-            f"Estop {self.estop_shutdown}/{self.disco_led_counter}s",
+            f"Estop {self.estop_shutdown} - {self.disco_led_counter}/{DISCO_LED_THRESHOLD}",
             # f"Off LED {self.Off_LED}",
             # f"On LED {self.On_LED}",
             # f"Charge LED {self.Charge_LED}",
@@ -555,6 +565,8 @@ class GeneratorController():
             f"Inv Del {self.inverter_delay}s",
             f"Fault {self.Fault_Detected}",
             f"Off Cnt {self.Off_Button_Pressed_Counter}",
+            f"Q Alarms Valid {self.Quattro_Alarms_Valid}",
+            f"Q Alarms Valid {self.Quattro_Alarms_Valid}({self.Battery_Contactors_Closed_Time}/{INVERTER_ON_DELAY})",
         ]
         )
 
