@@ -221,11 +221,11 @@ class GeneratorController():
     def Check_Battery_Contactors_Closed(self):
         if (self.Battery_Charge_Limit) and (self.Battery_Discharge_Limit): # Non-zero current limits means that 48V system is online
             self.Battery_Contactors_Closed = True
-            self.inverter_delay = 10
             self.Battery_Contactors_Closed_Time += 1
         else:
             self.Battery_Contactors_Closed = False
             self.Battery_Contactors_Closed_Time = 0
+            self.inverter_delay = 10
 
     @property
     def Quattro_Alarms_Valid(self):
