@@ -48,6 +48,7 @@ class GeneratorController():
         self.Battery_SOC = 0
         self.Battery_Charge_Limit = 0
         self.Battery_Discharge_Limit = 0
+        self.Battery_Contactors_Closed = False
         self.Battery_Contactors_Closed_Time = 0
         self.AC_Output_Power = None
         self.AC_InputCurrentLimit = None
@@ -217,15 +218,14 @@ class GeneratorController():
         else:
             return False
 
-    @property
-    def Battery_Contactors_Closed(self):
-        val = (self.Battery_Charge_Limit) and (self.Battery_Discharge_Limit) # Non-zero current limits means that 48V system is online
-        if val == False:
+    def Check_Battery_Contactors_Closed(self):
+        if (self.Battery_Charge_Limit) and (self.Battery_Discharge_Limit): # Non-zero current limits means that 48V system is online
+            self.Battery_Contactors_Closed = True
             self.inverter_delay = 10
             self.Battery_Contactors_Closed_Time = 0
         else:
+            self.Battery_Contactors_Closed = False
             self.Battery_Contactors_Closed_Time += 1
-        return val
 
     @property
     def Quattro_Alarms_Valid(self):
@@ -496,6 +496,7 @@ class GeneratorController():
             self.update_battery_limits()
             if self.Mode == "On" or self.Mode == "ChargeOnly":
                 self.update_ac_output_power()
+            self.Check_Battery_Contactors_Closed()
             self.check_reverse_power()
             self.check_estop_alarm()
             self.update_relay_states()
