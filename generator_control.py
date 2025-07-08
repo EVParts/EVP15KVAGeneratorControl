@@ -388,7 +388,7 @@ class GeneratorController():
             return self.set_relay(2, self.Off_LED)
 
     def set_on_led(self):
-        if self.On_LED and self.Fault_Detected:
+        if self.On_LED and ((not self.Quattro_Alarms_Valid) or  self.Fault_Detected) :
             r = self.set_relay(3, self._Toggle_State)
             self._Toggle_State = not self._Toggle_State
             return r
@@ -396,7 +396,7 @@ class GeneratorController():
             return self.set_relay(3, self.On_LED)
 
     def set_charge_led(self):
-        if self.Charge_LED and self.Fault_Detected:
+        if self.Charge_LED and ((not self.Quattro_Alarms_Valid) or  self.Fault_Detected) :
             r = self.set_relay(4, self._Toggle_State)
             self._Toggle_State = not self._Toggle_State
             return r
