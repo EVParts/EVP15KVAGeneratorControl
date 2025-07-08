@@ -102,6 +102,16 @@ class GeneratorController():
         self.check_and_create_connections()
 
     @property
+    def Fault_Pending(self):
+        if (self.Reverse_Power_Detected):
+            print("Reverse Power Fault", flush=True)
+            return True
+        if (self.disco_led_counter > 0):
+            print("EStop/AC Safety Loop Fault", flush=True)
+            return True
+        return False
+
+    @property
     def Fault_Detected(self):
         if self.Mode not in ["Off", "On", "ChargeOnly"]:
             print("Mode Fault", flush=True)
@@ -385,15 +395,13 @@ class GeneratorController():
     def set_off_led(self):
         if self.Off_LED and self.Fault_Detected:
             r = self.set_relay(2, self._Toggle_State)
-            self._Toggle_State = not self._Toggle_State
             return r
         else:
             return self.set_relay(2, self.Off_LED)
 
     def set_on_led(self):
-        if self.On_LED and ((not self.Quattro_Alarms_Valid) or  self.Fault_Detected) :
+        if self.On_LED and ((not self.Quattro_Alarms_Valid) or self.Fault_Pending or self.Fault_Detected) :
             r = self.set_relay(3, self._Toggle_State)
-            self._Toggle_State = not self._Toggle_State
             return r
         else:
             return self.set_relay(3, self.On_LED)
@@ -401,12 +409,12 @@ class GeneratorController():
     def set_charge_led(self):
         if self.Charge_LED and ((not self.Quattro_Alarms_Valid) or  self.Fault_Detected) :
             r = self.set_relay(4, self._Toggle_State)
-            self._Toggle_State = not self._Toggle_State
             return r
         else:
             return self.set_relay(4, self.Charge_LED)
 
     def set_outputs(self):
+        self._Toggle_State = not self._Toggle_State
         all_ok = True
         all_ok &= self.set_off_led()
         all_ok &= self.set_on_led()
