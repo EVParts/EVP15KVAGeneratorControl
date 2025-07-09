@@ -280,11 +280,13 @@ class GeneratorController():
             self.Mode = "On"
             self.BMS_Disable = False
             self.Reverse_Power_Shutdown = False
+            self.estop_shutdown = False
             self.DSE_Panel_Lock_Mode_Request = True
         elif self.Charge_Button_Pressed and not (self.On_Button_Pressed or self.Off_Button_Pressed):
             self.Mode = "ChargeOnly"
             self.BMS_Disable = False
             self.Reverse_Power_Shutdown = False
+            self.estop_shutdown = False
             self.DSE_Panel_Lock_Mode_Request = True
         else:
             pass  # Leave mode unchanged
@@ -491,8 +493,6 @@ class GeneratorController():
         if self.disco_led_counter >= DISCO_LED_THRESHOLD:
             print("The 'disco' lights are stuck on on the quattro, AC safety loop may have tripped (EStop?)")
             self.estop_shutdown = True
-        else:
-            self.estop_shutdown = False
 
     def run(self):
         self.check_stored_state()
