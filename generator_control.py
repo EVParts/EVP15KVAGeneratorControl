@@ -29,6 +29,7 @@ REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
 DISCO_LED_THRESHOLD = 30 / TIMESTEP # Time for which the Quattro must show disco LEDs before triggering an EStop Shutdown.
 INVERTER_ON_DELAY = 60 / TIMESTEP # Delay for which the Battery contactors must be closed before the alarms which can shut down ths system start counting
 
+MIN_LOG_INTERVAL = 1
 # Caused a crash on newer generators?
 PROFILEMEMORY = False
 
@@ -61,6 +62,7 @@ class GeneratorController():
         self.Inverter_Connected = False
         self.BMS_Connected = False
         self.input_values = {}
+        self.relay_targets = {}
         self.relay_states = {}
         self.quattro_leds = {}
         self.inverter_delay = 0
@@ -433,10 +435,10 @@ class GeneratorController():
             print("All Relays not Set OK")
             raise RuntimeError("Could not control Relays!!!")
 
-    def set_led_override(self, off_led, on_led, charge_led):
-        self.set_relay(2, off_led)
-        self.set_relay(3, on_led)
-        self.set_relay(4, charge_led)
+    # def set_led_override(self, off_led, on_led, charge_led):
+    #     self.set_relay(2, off_led)
+    #     self.set_relay(3, on_led)
+    #     self.set_relay(4, charge_led)
 
     def set_inverter_switch_mode(self):
         if self.Inverter_Switch_Mode_Target != self.Inverter_Switch_Mode:  # Only Update the switch mode when it changes.
@@ -456,7 +458,8 @@ class GeneratorController():
     def set_relay(self, relay_no, target_value):
         if isinstance(target_value, bool):
             target_value = int(target_value)
-        if target_value != self.relay_states.get(relay_no): # Only Update the switch mode when it changes.
+        self.relay_targets[relay_no] = target_value
+        if target_value != self.relay_states.get(relay_no):
             print(f"Setting Relay {relay_no} to {target_value}")
             return self.set_dbus_value(f"relay_{relay_no}", target_value)
         else:
@@ -532,13 +535,13 @@ class GeneratorController():
             sleep(max(0.0, TIMESTEP - (time() - t0)))
 
     def log_state(self):
-        log = {"Inputs": self.input_values, "Relays": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
+        log = {"Inputs": self.input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
                 self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
             else:
                 self.duplicate_log_counter[log_type] = 0
-            if (log[log_type] != self._last_log.get(log_type)) or ((self.duplicate_log_counter[log_type] % 10) == 0):
+            if (log[log_type] != self._last_log.get(log_type)) or ((self.duplicate_log_counter[log_type] % MIN_LOG_INTERVAL) == 0):
                 if isinstance(log[log_type], dict):
                     print(f"{log_type}: {pformat(log[log_type], width=200)}")
                 else:
