@@ -26,7 +26,7 @@ DEFAULT_MODE = "Off"
 
 TIMESTEP = 1
 REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
-DISCO_LED_THRESHOLD = 30 / TIMESTEP # Time for which the Quattro must show disco LEDs before triggering an EStop Shutdown.
+AC_SAFTEY_LOOP_COUNTER_THRESHOLD = 30 / TIMESTEP # Time for which the Quattro must show disco LEDs before triggering an EStop Shutdown.
 INVERTER_ON_DELAY = 60 / TIMESTEP # Delay for which the Battery contactors must be closed before the alarms which can shut down ths system start counting
 
 MIN_LOG_INTERVAL = 1
@@ -58,7 +58,7 @@ class GeneratorController():
         self.disco_led_counter = 0
         self.Reverse_Power_Alarm = False
         self.Reverse_Power_Shutdown = False
-        self.estop_shutdown = False
+        self.ac_safety_loop_shutdown = False
         self.Inverter_Connected = False
         self.BMS_Connected = False
         self.input_values = {}
@@ -127,7 +127,7 @@ class GeneratorController():
         if (self.Reverse_Power_Shutdown == True) or (self.Reverse_Power_Alarm == True):
             print("Reverse Power Fault", flush=True)
             return True
-        if (self.estop_shutdown == True):
+        if (self.ac_safety_loop_shutdown == True):
             print("EStop/AC Safety Loop Fault", flush=True)
             return True
         return False
@@ -274,19 +274,20 @@ class GeneratorController():
         elif self.Reverse_Power_Alarm:
             self.Reverse_Power_Shutdown = True
             self.Mode = "Off"
-        elif self.estop_shutdown == True:
+        elif self.ac_safety_loop_shutdown == True:
+            # NOTE :This will prevent the system from being turned back on until the isolator has been cycled.
             self.Mode = "Off"
         elif self.On_Button_Pressed and not (self.Off_Button_Pressed or self.Charge_Button_Pressed):
             self.Mode = "On"
             self.BMS_Disable = False
             self.Reverse_Power_Shutdown = False
-            self.estop_shutdown = False
+            self.ac_safety_loop_shutdown = False
             self.DSE_Panel_Lock_Mode_Request = True
         elif self.Charge_Button_Pressed and not (self.On_Button_Pressed or self.Off_Button_Pressed):
             self.Mode = "ChargeOnly"
             self.BMS_Disable = False
             self.Reverse_Power_Shutdown = False
-            self.estop_shutdown = False
+            self.ac_safety_loop_shutdown = False
             self.DSE_Panel_Lock_Mode_Request = True
         else:
             pass  # Leave mode unchanged
@@ -484,15 +485,15 @@ class GeneratorController():
         elif (self.Reverse_Power_Counter == 0):  # Only reset if it has counted back down to 0
             self.Reverse_Power_Alarm = False
 
-    def check_estop_alarm(self):
+    def check_ac_saftey_loop_alarm(self):
         if self.Quattro_Alarms_Valid and (self.Mode != "Off") and ((self.quattro_leds["mains"] == 3) and (self.quattro_leds["inverter"] == 2)):
             self.disco_led_counter += 1
         else:
             self.disco_led_counter = 0
 
-        if self.disco_led_counter >= DISCO_LED_THRESHOLD:
-            print("The 'disco' lights are stuck on on the quattro, AC safety loop may have tripped (EStop?)")
-            self.estop_shutdown = True
+        if self.disco_led_counter >= AC_SAFTEY_LOOP_COUNTER_THRESHOLD:
+            print("The 'disco' lights are stuck on on the quattro, AC safety loop may have tripped (EStop, RCD etc.)")
+            self.ac_safety_loop_shutdown = True
 
     def run(self):
         self.check_stored_state()
@@ -512,7 +513,7 @@ class GeneratorController():
                 self.update_ac_output_power()
             self.Check_Battery_Contactors_Closed()
             self.check_reverse_power()
-            self.check_estop_alarm()
+            self.check_ac_saftey_loop_alarm()
             self.update_relay_states()
             self.set_outputs()
             self.update_inverter_switch_mode()
@@ -577,7 +578,7 @@ class GeneratorController():
             f"AC Out {self.AC_Output_Power}W",
             f"Inv Mode {self.Inverter_Switch_Mode_Target}/{self.Inverter_Switch_Mode}",
             f"Rev Pwr {self.Reverse_Power_Detected} - {self.Reverse_Power_Counter * TIMESTEP}s",
-            f"Estop {self.estop_shutdown} - {self.disco_led_counter}/{DISCO_LED_THRESHOLD}",
+            f"AC Safety {self.ac_safety_loop_shutdown} - {self.disco_led_counter}/{AC_SAFTEY_LOOP_COUNTER_THRESHOLD}",
             # f"Off LED {self.Off_LED}",
             # f"On LED {self.On_LED}",
             # f"Charge LED {self.Charge_LED}",
