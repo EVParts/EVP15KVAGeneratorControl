@@ -459,6 +459,12 @@ class GeneratorController():
                     self.inverter_delay = max(0, self.inverter_delay)
 
     def set_relay(self, relay_no, target_value):
+        """
+        Set the state of a relay output. Use the feedback signal for the relay state to avoid spamming the same relay
+        command to the dbus repeatedly.
+        When switching to the GX IO Extender module the dbus state can be used instead of a feedback measurement.
+        This may not be necessary as the dbus code may already be checking for changes to values...
+        """
         if isinstance(target_value, bool):
             target_value = int(target_value)
         self.relay_targets[relay_no] = target_value
