@@ -62,6 +62,7 @@ class GeneratorController():
         self.Inverter_Connected = False
         self.BMS_Connected = False
         self.input_values = {}
+        self.previous_input_values = {}
         self.relay_targets = {}
         self.relay_states = {}
         self.quattro_leds = {}
@@ -136,7 +137,19 @@ class GeneratorController():
     #     return True
 
     def update_inputs(self):
-        self.input_values = {
+        # Debounce queue for each input. Can change the amount of debounce required by changing the
+        if not self.previous_input_values:
+            self.prev_input_values = {
+                "Off_Button": [0, 0],
+                "On_Button": [0, 0],
+                "Charge_Button": [0, 0],
+                "Off_LED": [0, 0],
+                "On_LED": [0, 0],
+                "Charge_LED": [0, 0],
+                "BMS_Wake": [0, 0],
+            }
+
+        new_input_values = {
             "Off_Button": self.read_input(5),
             "On_Button": self.read_input(6),
             "Charge_Button": self.read_input(7),
@@ -145,6 +158,18 @@ class GeneratorController():
             "Charge_LED": self.read_input('a'),
             "BMS_Wake": self.read_input('b'),
         }
+
+        # Only change the input_values field if the full set of previous values are the same.
+        for key in new_input_values:
+            self.prev_input_values[key].append(new_input_values[key])
+            del self.prev_input_values[key][0]
+            if all(self.prev_input_values[key]):
+                self.input_values[key] = 1
+            elif not any(self.prev_input_values[key]):
+                self.input_values[key] = 0
+            else:
+                # Leave input unchanged
+                pass
 
 
     def read_input(self, input_no):
@@ -542,7 +567,7 @@ class GeneratorController():
             sleep(max(0.0, TIMESTEP - (time() - t0)))
 
     def log_state(self):
-        log = {"Inputs": self.input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
+        log = {"Inputs": self.input_values, "Prev Inputs": self.previous_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
                 self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
