@@ -144,9 +144,9 @@ class GeneratorController():
                 "Off_Button": [0, 0],
                 "On_Button": [0, 0],
                 "Charge_Button": [0, 0],
-                "Off_LED": [0, 0],
-                "On_LED": [0, 0],
-                "Charge_LED": [0, 0],
+                "Off_LED": [0],
+                "On_LED": [0],
+                "Charge_LED": [0],
                 "BMS_Wake": [0, 0],
             }
             pprint(self.prev_input_values)
