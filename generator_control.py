@@ -62,7 +62,7 @@ class GeneratorController():
         self.Inverter_Connected = False
         self.BMS_Connected = False
         self.input_values = {}
-        self.previous_input_values = {}
+        self.prev_input_values = {}
         self.relay_targets = {}
         self.relay_states = {}
         self.quattro_leds = {}
@@ -138,7 +138,8 @@ class GeneratorController():
 
     def update_inputs(self):
         # Debounce queue for each input. Can change the amount of debounce required by changing the
-        if not self.previous_input_values:
+        if self.prev_input_values == {}:
+            print("Initialise Prev values for debounce")
             self.prev_input_values = {
                 "Off_Button": [0, 0],
                 "On_Button": [0, 0],
@@ -148,6 +149,7 @@ class GeneratorController():
                 "Charge_LED": [0, 0],
                 "BMS_Wake": [0, 0],
             }
+            pprint(self.prev_input_values)
 
         new_input_values = {
             "Off_Button": self.read_input(5),
@@ -533,6 +535,7 @@ class GeneratorController():
 
         counter = 0
         while True:
+            print("\n**** Cycle Start ****\n")
             t0 = time()
             self.check_and_create_connections()
             self.update_inputs()
@@ -567,7 +570,7 @@ class GeneratorController():
             sleep(max(0.0, TIMESTEP - (time() - t0)))
 
     def log_state(self):
-        log = {"Inputs": self.input_values, "Prev Inputs": self.previous_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
+        log = {"Inputs": self.input_values, "Prev Inputs": self.prev_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
                 self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
