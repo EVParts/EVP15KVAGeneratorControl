@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 import json
 import os
+import socket
+import struct
 import sys
+import threading
+
 from os.path import join, dirname, exists
 from pprint import pprint, pformat
 from time import time, sleep
@@ -32,6 +36,10 @@ INVERTER_ON_DELAY = 60 / TIMESTEP # Delay for which the Battery contactors must 
 MIN_LOG_INTERVAL = 1
 # Caused a crash on newer generators?
 PROFILEMEMORY = False
+
+# CAN Bus Logging
+CCS_A_FRAME_ID = 0x112
+BATTERY_CAN_INTERFACE = "vecan0"
 
 if PROFILEMEMORY:
     import tracemalloc
@@ -71,6 +79,8 @@ class GeneratorController():
         self._last_log = {}
         self.duplicate_log_counter = {}
 
+        self.can_monitor = CAN_Monitor(BATTERY_CAN_INTERFACE, [CCS_A_FRAME_ID])
+
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
@@ -103,6 +113,10 @@ class GeneratorController():
         self.dbus_items = {}
 
         self.check_and_create_connections()
+
+    def __del__(self):
+        if self.can_monitor:
+            self.can_monitor.stop()
 
     @property
     def Fault_Pending(self):
@@ -530,7 +544,7 @@ class GeneratorController():
 
     def run(self):
         self.check_stored_state()
-
+        self.can_monitor.start()
         self.snapshot_memory()
 
         counter = 0
@@ -555,6 +569,7 @@ class GeneratorController():
 
             if (self.Service_Restart_Requested):
                 print("Service Restart Requested, Going Down in 5s!", flush=True)
+                self.can_monitor.stop(timeout=5)
                 self.store_state()
                 sleep(5)
                 exit()
@@ -571,6 +586,9 @@ class GeneratorController():
 
     def log_state(self):
         log = {"Inputs": self.input_values, "Prev Inputs": self.prev_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
+
+        log["CCS_A"] = self.get_ccs_a_frame()
+
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
                 self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
@@ -672,6 +690,164 @@ class GeneratorController():
         else:
             print("No state_dump.json file detected", flush=True)
 
+    def get_ccs_a_frame(self):
+        a_frame = self.can_monitor.get_latest(CCS_A_FRAME_ID)
+        if a_frame is not None:
+            if type(a_frame.get("data")) != bytes:
+                return "Invalid Payload data"
+            if len(a_frame) != 8:
+                return "Invalid payload length"
+            if a_frame.get("age_ms") is None:
+                return "Invalid can rx age"
+
+            payload = a_frame["data"]
+
+            # Three 16-bit values
+            current = int.from_bytes(payload[0:2], 'little', signed=True)
+            fault_line = int.from_bytes(payload[2:4], 'little', signed=False)
+            ignition = int.from_bytes(payload[4:6], 'little', signed=False)
+
+            # Flag array
+            flags = payload[6]
+
+            # ignition_in = bool(flags & 0x01)
+            # bms_pwr_on = bool(flags & 0x02)
+            # digital_ignition_in = bool(flags & 0x04)
+            # drive_request = bool(flags & 0x08)
+            # fault_in = bool(flags & 0x10)
+            # precharge_on = bool(flags & 0x20)
+            # main_contactor_state = bool(flags & 0x40)
+
+            # State enum
+            state = payload[7]
+
+            flag_bits = f"{flags:08b}".replace("", " ").strip()
+
+            return (
+                f"Age={a_frame.get("age_ms"):5.1f}ms"
+                f"Current={current / 10:6.1f}A, "
+                f"FaultLine={fault_line / 100:4.1f}V, "
+                f"Ignition={ignition / 100:4.1f}V, "
+                f"Flags=0x{flags:02X} ({flag_bits}), "
+                f"State={state}"
+            )
+        else:
+            return "Not Received"
+
+
+
+class CAN_Monitor:
+
+    CAN_RAW = 1
+    SOL_CAN_RAW = 101
+    CAN_RAW_FILTER = 1
+
+    CAN_SFF_MASK = 0x7FF
+    CAN_EFF_FLAG = 0x80000000
+    CAN_RTR_FLAG = 0x40000000
+
+    def __init__(self, interface, can_ids):
+
+        self.interface = interface
+        self.can_ids = list(can_ids)
+
+        self.latest = {}
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+
+        self.sock = socket.socket(
+            socket.AF_CAN,
+            socket.SOCK_RAW,
+            self.CAN_RAW
+        )
+
+        # Create one filter for each standard CAN data ID
+        filters = b""
+
+        for can_id in self.can_ids:
+            filters += struct.pack(
+                "=II",
+                can_id,
+                self.CAN_SFF_MASK | self.CAN_EFF_FLAG | self.CAN_RTR_FLAG
+            )
+
+        self.sock.setsockopt(
+            self.SOL_CAN_RAW,
+            self.CAN_RAW_FILTER,
+            filters
+        )
+
+        self.sock.bind((self.interface,))
+        self.sock.settimeout(0.1)
+
+        self.thread = None
+
+    def start(self):
+
+        if self.thread is not None and self.thread.is_alive():
+            return
+
+        self.stop_event.clear()
+
+        self.thread = threading.Thread(
+            target=self._receive_loop,
+            daemon=True
+        )
+
+        self.thread.start()
+
+    def _receive_loop(self):
+
+        while not self.stop_event.is_set():
+
+            try:
+                frame = self.sock.recv(16)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            can_id, length = struct.unpack("=IB", frame[:5])
+
+            # Ignore extended and remote frames
+            if can_id & (self.CAN_EFF_FLAG | self.CAN_RTR_FLAG):
+                continue
+
+            can_id &= self.CAN_SFF_MASK
+            data = frame[8:8 + length]
+
+            with self.lock:
+                self.latest[can_id] = {
+                    "data": data,
+                    "timestamp": time.monotonic(),
+                    "length": length
+                }
+
+    def get_latest(self, can_id):
+
+        with self.lock:
+            value = self.latest.get(can_id)
+
+            if value is None:
+                return None
+
+            result = value.copy()
+
+        result["age_ms"] = (time.monotonic() - result["timestamp"]) * 1000
+
+        return result
+
+
+    def stop(self, timeout=1):
+        print("Stopping CAN Monitor")
+        self.stop_event.set()
+
+        if self.thread is not None:
+            print("Waiting for thread to stop")
+            self.thread.join(timeout)
+
+        self.sock.close()
+        print("CAN Socket closed")
 
 
 if __name__ == "__main__":
