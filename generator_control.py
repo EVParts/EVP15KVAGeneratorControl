@@ -137,7 +137,7 @@ class GeneratorController():
     #     return True
 
     def update_inputs(self):
-        # Debounce queue for each input. Can change the amount of debounce required by changing the
+        # Debounce queue for each input. Can change the amount of debounce required by changing the length of the queue
         if self.prev_input_values == {}:
             print("Initialise Prev values for debounce")
             self.prev_input_values = {
