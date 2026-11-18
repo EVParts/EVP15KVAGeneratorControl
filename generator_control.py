@@ -3,12 +3,13 @@ import json
 import os
 import socket
 import struct
+import subprocess
 import sys
 import threading
 
 from os.path import join, dirname, exists
 from pprint import pprint, pformat
-from time import time, sleep
+from time import time, sleep, monotonic
 
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
@@ -695,7 +696,7 @@ class GeneratorController():
         if a_frame is not None:
             if type(a_frame.get("data")) != bytes:
                 return "Invalid Payload data"
-            if len(a_frame) != 8:
+            if len(a_frame.get("data")) != 8:
                 return "Invalid payload length"
             if a_frame.get("age_ms") is None:
                 return "Invalid can rx age"
@@ -723,13 +724,22 @@ class GeneratorController():
 
             flag_bits = f"{flags:08b}".replace("", " ").strip()
 
+            PackStatus = {0: "Off",
+                          1: "Run",
+                          2: "Charge",
+                          3: "PreCharge",
+                          4: "Shutdown",
+                          5: "Init",
+                          6: "eStop",
+                          7: "Error"}
+
             return (
-                f"Age={a_frame.get("age_ms"):5.1f}ms"
+                f"Age={a_frame.get("age_ms"):5.1f}ms, "
                 f"Current={current / 10:6.1f}A, "
                 f"FaultLine={fault_line / 100:4.1f}V, "
                 f"Ignition={ignition / 100:4.1f}V, "
                 f"Flags=0x{flags:02X} ({flag_bits}), "
-                f"State={state}"
+                f"State={state} - {PackStatus.get(state)}"
             )
         else:
             return "Not Received"
@@ -747,6 +757,7 @@ class CAN_Monitor:
     CAN_RTR_FLAG = 0x40000000
 
     def __init__(self, interface, can_ids):
+        print(f"using {interface}")
 
         self.interface = interface
         self.can_ids = list(can_ids)
@@ -819,7 +830,7 @@ class CAN_Monitor:
             with self.lock:
                 self.latest[can_id] = {
                     "data": data,
-                    "timestamp": time.monotonic(),
+                    "timestamp": monotonic(),
                     "length": length
                 }
 
@@ -833,7 +844,7 @@ class CAN_Monitor:
 
             result = value.copy()
 
-        result["age_ms"] = (time.monotonic() - result["timestamp"]) * 1000
+        result["age_ms"] = (monotonic() - result["timestamp"]) * 1000
 
         return result
 
