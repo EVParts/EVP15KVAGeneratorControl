@@ -34,7 +34,7 @@ REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
 AC_SAFTEY_LOOP_COUNTER_THRESHOLD = 30 / TIMESTEP # Time for which the Quattro must show disco LEDs before triggering an EStop Shutdown.
 INVERTER_ON_DELAY = 60 / TIMESTEP # Delay for which the Battery contactors must be closed before the alarms which can shut down ths system start counting
 
-MIN_LOG_INTERVAL = 1
+MIN_LOG_INTERVAL = 10
 # Caused a crash on newer generators?
 PROFILEMEMORY = False
 
