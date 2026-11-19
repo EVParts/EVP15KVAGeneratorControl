@@ -605,7 +605,7 @@ class GeneratorController():
     def log_state(self):
         log = {"Inputs": self.input_values, "Prev Inputs": self.prev_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
 
-        log["CCS_A"] = self.can_ccs_a_frame
+        log["CCS_A"] = self.print_ccs_a_frame()
 
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
