@@ -491,8 +491,8 @@ class GeneratorController():
                 if self.inverter_delay == 0:
                     if (time() - self._inverter_switch_mode_update_time) > 5:
                         self._inverter_switch_mode_update_time = time()
-                        self.set_dbus_value("inverter_switch_mode", self.Inverter_Switch_Mode_Target)
                         print(f"Updating switch mode from {self.Inverter_Switch_Mode} to {self.Inverter_Switch_Mode_Target}.", flush=True)
+                        self.set_dbus_value("inverter_switch_mode", self.Inverter_Switch_Mode_Target)
                     else:
                         print("Not updating the switch mode until 5s have elapsed.", flush=True)
                 else:
@@ -511,7 +511,7 @@ class GeneratorController():
             target_value = int(target_value)
         self.relay_targets[relay_no] = target_value
         if target_value != self.relay_states.get(relay_no):
-            print(f"Setting Relay {relay_no} to {target_value}")
+            print(f"Setting Relay {relay_no} to {target_value}", flush=True) # Flush the log so that we can see this line in case anything causes a 12v brownouut
             return self.set_dbus_value(f"relay_{relay_no}", target_value)
         else:
             return True
