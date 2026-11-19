@@ -41,6 +41,7 @@ PROFILEMEMORY = False
 # CAN Bus Logging
 CCS_A_FRAME_ID = 0x112
 BATTERY_CAN_INTERFACE = "vecan0"
+CCS_A_FRAME_TIMEOUT = 2000 # ms
 
 if PROFILEMEMORY:
     import tracemalloc
@@ -81,6 +82,18 @@ class GeneratorController():
         self.duplicate_log_counter = {}
 
         self.can_monitor = CAN_Monitor(BATTERY_CAN_INTERFACE, [CCS_A_FRAME_ID])
+
+        self.can_ccs_a_frame = None
+        self.can_current = None
+        self.can_fault_line_voltage = None
+        self.can_ignition_voltage = None
+        self.can_flags_BMainContactor = None
+        self.can_flags_BPreChgOn = None
+        self.can_flags_BFault = None
+        self.can_flags_BDriveReq = None
+        self.can_flags_BDIgnition = None
+        self.can_flags_BBMSPower = None
+        self.can_flags_BIgnition = None
 
 
         if PROFILEMEMORY:
@@ -248,7 +261,7 @@ class GeneratorController():
     @property
     def DSE_Remote_Start(self):
         # Remote Start only set in "On" mode
-        return (self.Mode == "On")
+        return ((self.Mode == "On") and (self.can_flags_BMainContactor == True))
 
     @property
     def RCD_Reset_Switch(self):
@@ -438,6 +451,9 @@ class GeneratorController():
         self.quattro_leds["inverter"] = self.get_dbus_value(f"quattro_inverter_led")
         self.quattro_leds["mains"] = self.get_dbus_value(f"quattro_mains_led")
 
+    def update_bms_can_data(self):
+        self.process_ccs_a_frame()
+
 
     def set_off_led(self):
         if self.Off_LED and self.Fault_Detected:
@@ -558,6 +574,7 @@ class GeneratorController():
             self.update_mode()
             self.update_battery_soc()
             self.update_battery_limits()
+            self.update_bms_can_data()
             if self.Mode == "On" or self.Mode == "ChargeOnly":
                 self.update_ac_output_power()
             self.Check_Battery_Contactors_Closed()
@@ -588,7 +605,7 @@ class GeneratorController():
     def log_state(self):
         log = {"Inputs": self.input_values, "Prev Inputs": self.prev_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
 
-        log["CCS_A"] = self.get_ccs_a_frame()
+        log["CCS_A"] = self.can_ccs_a_frame
 
         for log_type in log.keys():
             if log[log_type] == self._last_log.get(log_type):
@@ -691,8 +708,59 @@ class GeneratorController():
         else:
             print("No state_dump.json file detected", flush=True)
 
-    def get_ccs_a_frame(self):
-        a_frame = self.can_monitor.get_latest(CCS_A_FRAME_ID)
+    def process_ccs_a_frame(self):
+        self.can_ccs_a_frame = self.can_monitor.get_latest(CCS_A_FRAME_ID)
+
+        valid = True
+
+        if self.can_ccs_a_frame is None:
+            print("No CCS A frame received")
+            valid = False
+        elif not isinstance(self.can_ccs_a_frame.get("data"), bytes):
+            print("Invalid payload data")
+            valid = False
+        elif len(self.can_ccs_a_frame["data"]) != 8:
+            print("Invalid payload length")
+            valid = False
+        elif self.can_ccs_a_frame.get("age_ms") is None:
+            print("Invalid CAN RX age")
+            valid = False
+        elif self.can_ccs_a_frame["age_ms"] >= CCS_A_FRAME_TIMEOUT:
+            print("CCS A frame timed out")
+            valid = False
+
+        if valid:
+            data = self.can_ccs_a_frame["data"]
+
+            self.can_current = int.from_bytes(data[0:2], 'little', signed=True)
+            self.can_fault_line_voltage = int.from_bytes(data[2:4], 'little')
+            self.can_ignition_voltage = int.from_bytes(data[4:6], 'little')
+
+            self.can_flags_BMainContactor = bool(data[6] & (1 << 6))
+            self.can_flags_BPreChgOn = bool(data[6] & (1 << 5))
+            self.can_flags_BFault = bool(data[6] & (1 << 4))
+            self.can_flags_BDriveReq = bool(data[6] & (1 << 3))
+            self.can_flags_BDIgnition = bool(data[6] & (1 << 2))
+            self.can_flags_BBMSPower = bool(data[6] & (1 << 1))
+            self.can_flags_BIgnition = bool(data[6] & (1 << 0))
+
+        else:
+            self.can_current = None
+            self.can_fault_line_voltage = None
+            self.can_ignition_voltage = None
+            self.can_flags_BMainContactor = None
+            self.can_flags_BPreChgOn = None
+            self.can_flags_BFault = None
+            self.can_flags_BDriveReq = None
+            self.can_flags_BDIgnition = None
+            self.can_flags_BBMSPower = None
+            self.can_flags_BIgnition = None
+
+
+
+
+    def print_ccs_a_frame(self):
+        a_frame = self.can_ccs_a_frame
         if a_frame is not None:
             if type(a_frame.get("data")) != bytes:
                 return "Invalid Payload data"
@@ -710,14 +778,6 @@ class GeneratorController():
 
             # Flag array
             flags = payload[6]
-
-            # ignition_in = bool(flags & 0x01)
-            # bms_pwr_on = bool(flags & 0x02)
-            # digital_ignition_in = bool(flags & 0x04)
-            # drive_request = bool(flags & 0x08)
-            # fault_in = bool(flags & 0x10)
-            # precharge_on = bool(flags & 0x20)
-            # main_contactor_state = bool(flags & 0x40)
 
             # State enum
             state = payload[7]
