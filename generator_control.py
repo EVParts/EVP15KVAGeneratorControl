@@ -112,16 +112,68 @@ class GeneratorController():
             "inverter_switch_mode": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Mode"},
             "relay_0": {"service": "com.victronenergy.system", "path": "/Relay/0/State"},
             "relay_1": {"service": "com.victronenergy.system", "path": "/Relay/1/State"},
-            "relay_2": {"service": "com.victronenergy.system", "path": "/Relay/2/State"},
-            "relay_3": {"service": "com.victronenergy.system", "path": "/Relay/3/State"},
-            "relay_4": {"service": "com.victronenergy.system", "path": "/Relay/4/State"},
-            "relay_5": {"service": "com.victronenergy.system", "path": "/Relay/5/State"},
-            "relay_6": {"service": "com.victronenergy.system", "path": "/Relay/6/State"},
-            "relay_7": {"service": "com.victronenergy.system", "path": "/Relay/7/State"},
-            "relay_8": {"service": "com.victronenergy.system", "path": "/Relay/8/State"},
-            "relay_9": {"service": "com.victronenergy.system", "path": "/Relay/9/State"},
+            "relay_2": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/off_button_led/State"
+            },
+            "relay_3": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/on_button_led/State"
+            },
+            "relay_4": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/charge_button_led/State"
+            },
+            "relay_5": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/bms_wake/State"
+            },
+            "relay_6": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/dse_remote_start/State"
+            },
+            "relay_7": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/dse_lock_keypad_mode/State"
+            },
+            "relay_8": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/earth_leakage_reset/State"
+            },
+            "relay_9": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/reverse_power_detection/State"
+            },
             "quattro_inverter_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Inverter"},
             "quattro_mains_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Mains"},
+            "input_off_button": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/off_button/Value"
+            },
+            "input_on_button": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/on_button/Value"
+            },
+            "input_charge_button": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/charge_button/Value"
+            },
+            "input_off_button_led_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/off_button_led_state/Value"
+            },
+            "input_on_button_led_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/on_button_led_state/Value"
+            },
+            "input_charge_button_led_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/charge_button_led_state/Value"
+            },
+            "input_bms_wake_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/bms_wake_state/Value"
+            },
         }
 
         self.dbus_items = {}
@@ -180,13 +232,13 @@ class GeneratorController():
             pprint(self.prev_input_values)
 
         new_input_values = {
-            "Off_Button": self.read_input(5),
-            "On_Button": self.read_input(6),
-            "Charge_Button": self.read_input(7),
-            "Off_LED": self.read_input(8),
-            "On_LED": self.read_input(9),
-            "Charge_LED": self.read_input('a'),
-            "BMS_Wake": self.read_input('b'),
+            "Off_Button": self.get_dbus_value("input_off_button"),
+            "On_Button": self.get_dbus_value("input_on_button"),
+            "Charge_Button": self.get_dbus_value("input_charge_button"),
+            "Off_LED": self.get_dbus_value("input_off_button_led_state"),
+            "On_LED": self.get_dbus_value("input_on_button_led_state"),
+            "Charge_LED": self.get_dbus_value("input_charge_button_led_state"),
+            "BMS_Wake": self.get_dbus_value("input_bms_wake_state"),
         }
 
         # Only change the input_values field if the full set of previous values are the same.
@@ -200,18 +252,6 @@ class GeneratorController():
             else:
                 # Leave input unchanged
                 pass
-
-
-    def read_input(self, input_no):
-        path = f"/dev/gpio/digital_input_{input_no}/value"
-        try:
-            with open(path) as f:
-                return 1 if (f.read().strip() == '1') else 0
-        except FileNotFoundError as e:
-            print(e)
-            print(f"returning 0 as cannot read input #{input_no}")
-            return 0
-
 
     @property
     def Off_Button_Pressed(self):
