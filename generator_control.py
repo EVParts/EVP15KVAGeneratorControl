@@ -12,6 +12,8 @@ from os.path import join, dirname, exists
 from pprint import pprint, pformat
 from time import time, sleep, monotonic
 
+from generic_input import create_generic_input, update_generic_input
+
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
 
@@ -96,6 +98,14 @@ class GeneratorController():
         self.can_flags_BBMSPower = None
         self.can_flags_BIgnition = None
 
+        self.plugin_state = create_generic_input(
+            service_name="com.victronenergy.switch.genset",
+            index="genset_control_state",
+            name="Genset Control State",
+            value=0,
+            labels=["N/A", "Off", "On", "ChargeOnly"],
+            group="Plugins"
+        )
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
@@ -348,6 +358,7 @@ class GeneratorController():
 
     def update_mode(self):
         _last_mode = self.Mode
+        # Update the input whenever its state changes
 
         if self.Mode == "":
             self.Mode = DEFAULT_MODE
@@ -392,6 +403,8 @@ class GeneratorController():
         #     print(self, flush=True)
         if _last_mode != self.Mode:
             self.store_state()
+
+        update_generic_input(self.plugin_state, {"Off": 1, "On": 2, "ChargeOnly": 3}.get(self.Mode, 0))
 
     def get_dbus_value(self, dbus_item_name: str):
         if (dbus_item := self.dbus_items.get(dbus_item_name)) is not None:
