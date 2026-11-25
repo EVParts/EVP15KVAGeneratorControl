@@ -1,11 +1,14 @@
+
+#!/usr/bin/env python3
+
 import os
 import sys
 import threading
 
+import dbus
+
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
-
-import dbus
 
 # Locate Victron's velib_python library
 sys.path.insert(
@@ -72,7 +75,7 @@ def _get_service(service_name):
         connection="Python",
         deviceinstance=0,
         productid=0xFFFF,
-        productname="Generic Inputs",
+        productname="Generator Control Plugin",
         firmwareversion=0,
         hardwareversion=0,
         connected=1
@@ -106,6 +109,12 @@ def create_generic_input(
     show_ui:      UI visibility setting (default 6)
     """
 
+    if "/" in str(index):
+        raise ValueError("Input index cannot contain '/'")
+
+    if not isinstance(name, str) or not name.strip():
+        raise ValueError("Input name must be a non-empty string")
+
     with _dbus_lock:
         _start_dbus()
 
@@ -113,36 +122,47 @@ def create_generic_input(
 
         path = f"/GenericInput/{index}"
 
-        if "/" in str(index):
-            raise ValueError("Input index cannot contain '/'")
-
         if f"{path}/Value" in service:
             raise ValueError(
                 f"Generic Input '{index}' already exists "
                 f"in service '{service_name}'"
             )
 
-        service.add_path(f"{path}/Value", int(value))
-        service.add_path(f"{path}/Name", name)
-        service.add_path(f"{path}/Status", 0)
-
-        service.add_path(f"{path}/Settings/Type", 0)
-        service.add_path(f"{path}/Settings/ValidTypes", 1)
-        service.add_path(f"{path}/Settings/ShowUIInput", int(show_ui))
+        service.add_path(f"{path}/Value", value=int(value))
+        service.add_path(f"{path}/Name", value=name)
+        service.add_path(f"{path}/Status", value=0)
 
         service.add_path(
-            f"{path}/Settings/Labels",
-            dbus.Array(
-                [dbus.String(label) for label in labels],
-                signature="s",
-                variant_level=1
-            )
+            f"{path}/Settings/CustomName",
+            value=name
         )
+        service.add_path(
+            f"{path}/Settings/Type",
+            value=0
+        )
+        service.add_path(
+            f"{path}/Settings/ValidTypes",
+            value=1
+        )
+        service.add_path(
+            f"{path}/Settings/ShowUIControl",
+            value=int(show_ui)
+        )
+
+        if labels is not None:
+            service.add_path(
+                f"{path}/Settings/Labels",
+                value=dbus.Array(
+                    [dbus.String(label) for label in labels],
+                    signature="s",
+                    variant_level=1
+                )
+            )
 
         if group is not None:
             service.add_path(
                 f"{path}/Settings/Group",
-                group
+                value=group
             )
 
         return GenericInput(service, path)
