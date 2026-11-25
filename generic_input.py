@@ -1,5 +1,3 @@
-
-import json
 import os
 import sys
 import threading
@@ -124,16 +122,20 @@ def create_generic_input(
 
         service.add_path(f"{path}/Value", int(value))
         service.add_path(f"{path}/Name", name)
+        service.add_path(f"{path}/Status", 0)
 
         service.add_path(f"{path}/Settings/Type", 0)
         service.add_path(f"{path}/Settings/ValidTypes", 1)
         service.add_path(f"{path}/Settings/ShowUIInput", int(show_ui))
 
-        if labels is not None:
-            service.add_path(
-                f"{path}/Settings/Labels",
-                json.dumps(labels)
+        service.add_path(
+            f"{path}/Settings/Labels",
+            dbus.Array(
+                [dbus.String(label) for label in labels],
+                signature="s",
+                variant_level=1
             )
+        )
 
         if group is not None:
             service.add_path(
