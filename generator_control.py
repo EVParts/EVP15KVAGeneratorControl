@@ -99,8 +99,8 @@ class GeneratorController():
         self.can_flags_BIgnition = None
 
         self.plugin_state = create_generic_input(
-            service_name="com.victronenergy.switch.genset",
-            index="genset_control_state",
+            service_name="com.victronenergy.switch.generator_control",
+            index="generator_control_state",
             name="Genset Control State",
             value=0,
             labels=["N/A", "Off", "On", "ChargeOnly"],
