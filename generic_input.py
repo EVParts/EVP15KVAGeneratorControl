@@ -5,6 +5,8 @@ import threading
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
 
+import dbus
+
 # Locate Victron's velib_python library
 sys.path.insert(
     0,
