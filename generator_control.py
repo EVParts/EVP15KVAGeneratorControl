@@ -6,6 +6,7 @@ import struct
 import subprocess
 import sys
 import threading
+from copy import deepcopy
 
 from os.path import join, dirname, exists
 from pprint import pprint, pformat
@@ -648,18 +649,23 @@ class GeneratorController():
         log["CCS_A"] = self.print_ccs_a_frame()
 
         for log_type in log.keys():
-            if log[log_type] == self._last_log.get(log_type):
-                self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
-            else:
+            changed = log[log_type] != self._last_log.get(log_type)
+
+            if changed:
                 self.duplicate_log_counter[log_type] = 0
-            if (log[log_type] != self._last_log.get(log_type)) or ((self.duplicate_log_counter[log_type] % MIN_LOG_INTERVAL) == 0):
+            else:
+                self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
+
+            if changed or (self.duplicate_log_counter[log_type] % MIN_LOG_INTERVAL == 0):
                 if isinstance(log[log_type], dict):
                     print(f"{log_type}: {pformat(log[log_type], width=200)}")
                 else:
                     print(f"{log_type}: {log[log_type]}".expandtabs(4))
             else:
                 print(f"{log_type}: No Change")
-            self._last_log[log_type] = log[log_type]
+
+            self._last_log[log_type] = deepcopy(log[log_type])
+
         sys.stdout.flush()
 
     def snapshot_memory(self):
