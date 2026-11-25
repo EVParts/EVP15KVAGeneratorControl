@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 import json
 import os
+import socket
+import struct
+import subprocess
 import sys
+import threading
+from copy import deepcopy
+
 from os.path import join, dirname, exists
 from pprint import pprint, pformat
-from time import time, sleep
+from time import time, sleep, monotonic
 
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
@@ -29,9 +35,14 @@ REVERSE_POWER_COUNTER_THRESHOLD = 10 / TIMESTEP  # 10s
 AC_SAFTEY_LOOP_COUNTER_THRESHOLD = 30 / TIMESTEP # Time for which the Quattro must show disco LEDs before triggering an EStop Shutdown.
 INVERTER_ON_DELAY = 60 / TIMESTEP # Delay for which the Battery contactors must be closed before the alarms which can shut down ths system start counting
 
-MIN_LOG_INTERVAL = 1
+MIN_LOG_INTERVAL = 10
 # Caused a crash on newer generators?
 PROFILEMEMORY = False
+
+# CAN Bus Logging
+CCS_A_FRAME_ID = 0x112
+BATTERY_CAN_INTERFACE = "vecan0"
+CCS_A_FRAME_TIMEOUT = 2000 # ms
 
 if PROFILEMEMORY:
     import tracemalloc
@@ -71,6 +82,20 @@ class GeneratorController():
         self._last_log = {}
         self.duplicate_log_counter = {}
 
+        self.can_monitor = CAN_Monitor(BATTERY_CAN_INTERFACE, [CCS_A_FRAME_ID])
+
+        self.can_ccs_a_frame = None
+        self.can_current = None
+        self.can_fault_line_voltage = None
+        self.can_ignition_voltage = None
+        self.can_flags_BMainContactor = None
+        self.can_flags_BPreChgOn = None
+        self.can_flags_BFault = None
+        self.can_flags_BDriveReq = None
+        self.can_flags_BDIgnition = None
+        self.can_flags_BBMSPower = None
+        self.can_flags_BIgnition = None
+
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
@@ -88,21 +113,77 @@ class GeneratorController():
             "inverter_switch_mode": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Mode"},
             "relay_0": {"service": "com.victronenergy.system", "path": "/Relay/0/State"},
             "relay_1": {"service": "com.victronenergy.system", "path": "/Relay/1/State"},
-            "relay_2": {"service": "com.victronenergy.system", "path": "/Relay/2/State"},
-            "relay_3": {"service": "com.victronenergy.system", "path": "/Relay/3/State"},
-            "relay_4": {"service": "com.victronenergy.system", "path": "/Relay/4/State"},
-            "relay_5": {"service": "com.victronenergy.system", "path": "/Relay/5/State"},
-            "relay_6": {"service": "com.victronenergy.system", "path": "/Relay/6/State"},
-            "relay_7": {"service": "com.victronenergy.system", "path": "/Relay/7/State"},
-            "relay_8": {"service": "com.victronenergy.system", "path": "/Relay/8/State"},
-            "relay_9": {"service": "com.victronenergy.system", "path": "/Relay/9/State"},
+            "relay_2": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/off_button_led/State"
+            },
+            "relay_3": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/on_button_led/State"
+            },
+            "relay_4": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/charge_button_led/State"
+            },
+            "relay_5": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/bms_wake/State"
+            },
+            "relay_6": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/dse_remote_start/State"
+            },
+            "relay_7": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/dse_lock_keypad_mode/State"
+            },
+            "relay_8": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/earth_leakage_reset/State"
+            },
+            "relay_9": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/SwitchableOutput/reverse_power_detection/State"
+            },
             "quattro_inverter_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Inverter"},
             "quattro_mains_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Mains"},
+            "input_off_button": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/off_button/Value"
+            },
+            "input_on_button": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/on_button/Value"
+            },
+            "input_charge_button": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/charge_button/Value"
+            },
+            "input_off_button_led_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/off_button_led_state/Value"
+            },
+            "input_on_button_led_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/on_button_led_state/Value"
+            },
+            "input_charge_button_led_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/charge_button_led_state/Value"
+            },
+            "input_bms_wake_state": {
+                "service": "com.victronenergy.switch.genset",
+                "path": "/GenericInput/bms_wake_state/Value"
+            },
         }
 
         self.dbus_items = {}
 
         self.check_and_create_connections()
+
+    def __del__(self):
+        if self.can_monitor:
+            self.can_monitor.stop()
 
     @property
     def Fault_Pending(self):
@@ -152,13 +233,13 @@ class GeneratorController():
             pprint(self.prev_input_values)
 
         new_input_values = {
-            "Off_Button": self.read_input(5),
-            "On_Button": self.read_input(6),
-            "Charge_Button": self.read_input(7),
-            "Off_LED": self.read_input(8),
-            "On_LED": self.read_input(9),
-            "Charge_LED": self.read_input('a'),
-            "BMS_Wake": self.read_input('b'),
+            "Off_Button": self.get_dbus_value("input_off_button"),
+            "On_Button": self.get_dbus_value("input_on_button"),
+            "Charge_Button": self.get_dbus_value("input_charge_button"),
+            "Off_LED": self.get_dbus_value("input_off_button_led_state"),
+            "On_LED": self.get_dbus_value("input_on_button_led_state"),
+            "Charge_LED": self.get_dbus_value("input_charge_button_led_state"),
+            "BMS_Wake": self.get_dbus_value("input_bms_wake_state"),
         }
 
         # Only change the input_values field if the full set of previous values are the same.
@@ -172,18 +253,6 @@ class GeneratorController():
             else:
                 # Leave input unchanged
                 pass
-
-
-    def read_input(self, input_no):
-        path = f"/dev/gpio/digital_input_{input_no}/value"
-        try:
-            with open(path) as f:
-                return 1 if (f.read().strip() == '1') else 0
-        except FileNotFoundError as e:
-            print(e)
-            print(f"returning 0 as cannot read input #{input_no}")
-            return 0
-
 
     @property
     def Off_Button_Pressed(self):
@@ -233,7 +302,7 @@ class GeneratorController():
     @property
     def DSE_Remote_Start(self):
         # Remote Start only set in "On" mode
-        return (self.Mode == "On")
+        return ((self.Mode == "On") and (self.can_flags_BMainContactor == True))
 
     @property
     def RCD_Reset_Switch(self):
@@ -423,6 +492,9 @@ class GeneratorController():
         self.quattro_leds["inverter"] = self.get_dbus_value(f"quattro_inverter_led")
         self.quattro_leds["mains"] = self.get_dbus_value(f"quattro_mains_led")
 
+    def update_bms_can_data(self):
+        self.process_ccs_a_frame()
+
 
     def set_off_led(self):
         if self.Off_LED and self.Fault_Detected:
@@ -476,8 +548,8 @@ class GeneratorController():
                 if self.inverter_delay == 0:
                     if (time() - self._inverter_switch_mode_update_time) > 5:
                         self._inverter_switch_mode_update_time = time()
-                        self.set_dbus_value("inverter_switch_mode", self.Inverter_Switch_Mode_Target)
                         print(f"Updating switch mode from {self.Inverter_Switch_Mode} to {self.Inverter_Switch_Mode_Target}.", flush=True)
+                        self.set_dbus_value("inverter_switch_mode", self.Inverter_Switch_Mode_Target)
                     else:
                         print("Not updating the switch mode until 5s have elapsed.", flush=True)
                 else:
@@ -496,7 +568,7 @@ class GeneratorController():
             target_value = int(target_value)
         self.relay_targets[relay_no] = target_value
         if target_value != self.relay_states.get(relay_no):
-            print(f"Setting Relay {relay_no} to {target_value}")
+            print(f"Setting Relay {relay_no} to {target_value}", flush=True) # Flush the log so that we can see this line in case anything causes a 12v brownouut
             return self.set_dbus_value(f"relay_{relay_no}", target_value)
         else:
             return True
@@ -530,7 +602,7 @@ class GeneratorController():
 
     def run(self):
         self.check_stored_state()
-
+        self.can_monitor.start()
         self.snapshot_memory()
 
         counter = 0
@@ -543,6 +615,7 @@ class GeneratorController():
             self.update_mode()
             self.update_battery_soc()
             self.update_battery_limits()
+            self.update_bms_can_data()
             if self.Mode == "On" or self.Mode == "ChargeOnly":
                 self.update_ac_output_power()
             self.Check_Battery_Contactors_Closed()
@@ -555,6 +628,7 @@ class GeneratorController():
 
             if (self.Service_Restart_Requested):
                 print("Service Restart Requested, Going Down in 5s!", flush=True)
+                self.can_monitor.stop(timeout=5)
                 self.store_state()
                 sleep(5)
                 exit()
@@ -571,19 +645,27 @@ class GeneratorController():
 
     def log_state(self):
         log = {"Inputs": self.input_values, "Prev Inputs": self.prev_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
+
+        log["CCS_A"] = self.print_ccs_a_frame()
+
         for log_type in log.keys():
-            if log[log_type] == self._last_log.get(log_type):
-                self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
-            else:
+            changed = log[log_type] != self._last_log.get(log_type)
+
+            if changed:
                 self.duplicate_log_counter[log_type] = 0
-            if (log[log_type] != self._last_log.get(log_type)) or ((self.duplicate_log_counter[log_type] % MIN_LOG_INTERVAL) == 0):
+            else:
+                self.duplicate_log_counter[log_type] = self.duplicate_log_counter.get(log_type, 0) + 1
+
+            if changed or (self.duplicate_log_counter[log_type] % MIN_LOG_INTERVAL == 0):
                 if isinstance(log[log_type], dict):
                     print(f"{log_type}: {pformat(log[log_type], width=200)}")
                 else:
                     print(f"{log_type}: {log[log_type]}".expandtabs(4))
             else:
                 print(f"{log_type}: No Change")
-            self._last_log[log_type] = log[log_type]
+
+            self._last_log[log_type] = deepcopy(log[log_type])
+
         sys.stdout.flush()
 
     def snapshot_memory(self):
@@ -620,7 +702,8 @@ class GeneratorController():
             # f"DSE Start {self.DSE_Remote_Start}",
             # f"DSE Mode {self.DSE_Mode_Request}",
             f"Inv Del {self.inverter_delay}s",
-            f"Fault {self.Fault_Detected}",
+            f"Fault Det {self.Fault_Detected}",
+            f"Fault Pen {self.Fault_Pending}",
             f"Off Cnt {self.Off_Button_Pressed_Counter}",
             f"Q Alarms Valid {self.Quattro_Alarms_Valid}",
             f"Q Alarms Valid {self.Quattro_Alarms_Valid}({self.Battery_Contactors_Closed_Time}/{INVERTER_ON_DELAY})",
@@ -672,6 +755,217 @@ class GeneratorController():
         else:
             print("No state_dump.json file detected", flush=True)
 
+    def process_ccs_a_frame(self):
+        self.can_ccs_a_frame = self.can_monitor.get_latest(CCS_A_FRAME_ID)
+
+        valid = True
+
+        if self.can_ccs_a_frame is None:
+            print("No CCS A frame received")
+            valid = False
+        elif not isinstance(self.can_ccs_a_frame.get("data"), bytes):
+            print("Invalid payload data")
+            valid = False
+        elif len(self.can_ccs_a_frame["data"]) != 8:
+            print("Invalid payload length")
+            valid = False
+        elif self.can_ccs_a_frame.get("age_ms") is None:
+            print("Invalid CAN RX age")
+            valid = False
+        elif self.can_ccs_a_frame["age_ms"] >= CCS_A_FRAME_TIMEOUT:
+            print("CCS A frame timed out")
+            valid = False
+
+        if valid:
+            data = self.can_ccs_a_frame["data"]
+
+            self.can_current = int.from_bytes(data[0:2], 'little', signed=True)
+            self.can_fault_line_voltage = int.from_bytes(data[2:4], 'little')
+            self.can_ignition_voltage = int.from_bytes(data[4:6], 'little')
+
+            self.can_flags_BMainContactor = bool(data[6] & (1 << 6))
+            self.can_flags_BPreChgOn = bool(data[6] & (1 << 5))
+            self.can_flags_BFault = bool(data[6] & (1 << 4))
+            self.can_flags_BDriveReq = bool(data[6] & (1 << 3))
+            self.can_flags_BDIgnition = bool(data[6] & (1 << 2))
+            self.can_flags_BBMSPower = bool(data[6] & (1 << 1))
+            self.can_flags_BIgnition = bool(data[6] & (1 << 0))
+
+        else:
+            self.can_current = None
+            self.can_fault_line_voltage = None
+            self.can_ignition_voltage = None
+            self.can_flags_BMainContactor = None
+            self.can_flags_BPreChgOn = None
+            self.can_flags_BFault = None
+            self.can_flags_BDriveReq = None
+            self.can_flags_BDIgnition = None
+            self.can_flags_BBMSPower = None
+            self.can_flags_BIgnition = None
+
+
+
+
+    def print_ccs_a_frame(self):
+        a_frame = self.can_ccs_a_frame
+        if a_frame is not None:
+            if type(a_frame.get("data")) != bytes:
+                return "Invalid Payload data"
+            if len(a_frame.get("data")) != 8:
+                return "Invalid payload length"
+            if a_frame.get("age_ms") is None:
+                return "Invalid can rx age"
+
+            payload = a_frame["data"]
+
+            # Three 16-bit values
+            current = int.from_bytes(payload[0:2], 'little', signed=True)
+            fault_line = int.from_bytes(payload[2:4], 'little', signed=False)
+            ignition = int.from_bytes(payload[4:6], 'little', signed=False)
+
+            # Flag array
+            flags = payload[6]
+
+            # State enum
+            state = payload[7]
+
+            flag_bits = f"{flags:08b}".replace("", " ").strip()
+
+            PackStatus = {0: "Off",
+                          1: "Run",
+                          2: "Charge",
+                          3: "PreCharge",
+                          4: "Shutdown",
+                          5: "Init",
+                          6: "eStop",
+                          7: "Error"}
+
+            return (
+                f"Age={a_frame.get("age_ms"):5.1f}ms, "
+                f"Current={current / 10:6.1f}A, "
+                f"FaultLine={fault_line / 100:4.1f}V, "
+                f"Ignition={ignition / 100:4.1f}V, "
+                f"Flags=0x{flags:02X} ({flag_bits}), "
+                f"State={state} - {PackStatus.get(state)}"
+            )
+        else:
+            return "Not Received"
+
+
+
+class CAN_Monitor:
+
+    CAN_RAW = 1
+    SOL_CAN_RAW = 101
+    CAN_RAW_FILTER = 1
+
+    CAN_SFF_MASK = 0x7FF
+    CAN_EFF_FLAG = 0x80000000
+    CAN_RTR_FLAG = 0x40000000
+
+    def __init__(self, interface, can_ids):
+        print(f"using {interface}")
+
+        self.interface = interface
+        self.can_ids = list(can_ids)
+
+        self.latest = {}
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+
+        self.sock = socket.socket(
+            socket.AF_CAN,
+            socket.SOCK_RAW,
+            self.CAN_RAW
+        )
+
+        # Create one filter for each standard CAN data ID
+        filters = b""
+
+        for can_id in self.can_ids:
+            filters += struct.pack(
+                "=II",
+                can_id,
+                self.CAN_SFF_MASK | self.CAN_EFF_FLAG | self.CAN_RTR_FLAG
+            )
+
+        self.sock.setsockopt(
+            self.SOL_CAN_RAW,
+            self.CAN_RAW_FILTER,
+            filters
+        )
+
+        self.sock.bind((self.interface,))
+        self.sock.settimeout(0.1)
+
+        self.thread = None
+
+    def start(self):
+
+        if self.thread is not None and self.thread.is_alive():
+            return
+
+        self.stop_event.clear()
+
+        self.thread = threading.Thread(
+            target=self._receive_loop,
+            daemon=True
+        )
+
+        self.thread.start()
+
+    def _receive_loop(self):
+
+        while not self.stop_event.is_set():
+
+            try:
+                frame = self.sock.recv(16)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+            can_id, length = struct.unpack("=IB", frame[:5])
+
+            # Ignore extended and remote frames
+            if can_id & (self.CAN_EFF_FLAG | self.CAN_RTR_FLAG):
+                continue
+
+            can_id &= self.CAN_SFF_MASK
+            data = frame[8:8 + length]
+
+            with self.lock:
+                self.latest[can_id] = {
+                    "data": data,
+                    "timestamp": monotonic(),
+                    "length": length
+                }
+
+    def get_latest(self, can_id):
+
+        with self.lock:
+            value = self.latest.get(can_id)
+
+            if value is None:
+                return None
+
+            result = value.copy()
+
+        result["age_ms"] = (monotonic() - result["timestamp"]) * 1000
+
+        return result
+
+
+    def stop(self, timeout=1):
+        print("Stopping CAN Monitor")
+        self.stop_event.set()
+
+        if self.thread is not None:
+            print("Waiting for thread to stop")
+            self.thread.join(timeout)
+
+        self.sock.close()
+        print("CAN Socket closed")
 
 
 if __name__ == "__main__":
