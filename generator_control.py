@@ -637,7 +637,7 @@ class GeneratorController():
         counter = 0
         while True:
             print("\n**** Cycle Start ****\n")
-            t0 = time()
+            self.tick_time = time()
             self.check_and_create_connections()
             self.update_inputs()
             self.update_qauttro_led_states()
@@ -670,7 +670,7 @@ class GeneratorController():
             if counter % 30 == 0:
                 self.store_state()
 
-            sleep(max(0.0, TIMESTEP - (time() - t0)))
+            sleep(max(0.0, TIMESTEP - (time() - self.tick_time)))
 
     def log_state(self):
         log = {"Inputs": self.input_values, "Prev Inputs": self.prev_input_values, "Relay Targets ": self.relay_targets, "Relay Feedback": self.relay_states, "Quattro LEDs": self.quattro_leds, "State": str(self)}
