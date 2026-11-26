@@ -54,6 +54,8 @@ class GeneratorController():
         DBusGMainLoop(set_as_default=True)
         self.dbusConn = dbus.SessionBus() if 'DBUS_SESSION_BUS_ADDRESS' in os.environ else dbus.SystemBus()
         self.Mode = ""
+        self.tick_time = time()
+        self.mode_entry_time = time()
         self._Toggle_State = False
         self._inverter_switch_mode_update_time = 0
         self.Off_Button_Pressed_Counter = 0
@@ -104,6 +106,14 @@ class GeneratorController():
             name="Genset Control State",
             value=0,
             labels=["N/A", "Off", "On", "ChargeOnly"],
+            group="Plugins"
+        )
+
+        self.plugin_state_timer = create_generic_input(
+            service_name="com.victronenergy.switch.generator_control",
+            index="generator_control_state_timer",
+            name="Genset Control State Timer",
+            value=0,
             group="Plugins"
         )
 
@@ -356,6 +366,10 @@ class GeneratorController():
     def Generator_Start_Requested(self):
         return self.relay_states[0]
 
+    @property
+    def generator_mode_time(self):
+        return round(self.tick_time - self.mode_entry_time, 1)
+
     def update_mode(self):
         _last_mode = self.Mode
         # Update the input whenever its state changes
@@ -402,9 +416,11 @@ class GeneratorController():
         # if (_last_mode != "Off") and (self.Mode != "Off"):
         #     print(self, flush=True)
         if _last_mode != self.Mode:
+            self.mode_entry_time = time()
             self.store_state()
 
         update_generic_input(self.plugin_state, {"Off": 1, "On": 2, "ChargeOnly": 3}.get(self.Mode, 0))
+        update_generic_input(self.plugin_state_timer, self.generator_mode_time)
 
     def get_dbus_value(self, dbus_item_name: str):
         if (dbus_item := self.dbus_items.get(dbus_item_name)) is not None:
