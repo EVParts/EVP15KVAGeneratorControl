@@ -66,26 +66,22 @@ def start_dbus():
         _main_loop_thread.start()
 
 
-def _service_metadata():
-    return (
-        ("/ProcessName", _PLUGIN_FILE),
-        ("/ProcessVersion", VERSION),
-        ("/Connection", "Python"),
-        ("/DeviceInstance", DEVICE_INSTANCE),
-        ("/ProductId", PRODUCT_ID),
-        ("/ProductName", PRODUCT_NAME),
-        ("/FirmwareVersion", FIRMWARE_VERSION),
-        ("/HardwareVersion", HARDWARE_VERSION),
-        ("/Connected", 1),
-    )
-
 def create_service():
-    """Create the plugin service and add its standard metadata paths."""
+    """Create the plugin service and add its mandatory D-Bus paths."""
     service_name = "com.victronenergy.switch.{}".format(_PLUGIN_NAME)
     service = VeDbusService(service_name, register=False)
 
-    for path, value in _service_metadata():
-        service.add_path(path, value)
+    service.add_mandatory_paths(
+        _PLUGIN_FILE,
+        VERSION,
+        "Python",
+        DEVICE_INSTANCE,
+        PRODUCT_ID,
+        PRODUCT_NAME,
+        FIRMWARE_VERSION,
+        HARDWARE_VERSION,
+        1,
+    )
 
     return service
 
