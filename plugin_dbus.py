@@ -28,7 +28,10 @@ _VERSION_FILE = os.path.join(os.path.dirname(_PLUGIN_FILE), "version")
 with open(_VERSION_FILE, "r", encoding="utf-8") as _version_file:
     VERSION = _version_file.read().strip()
 
-PRODUCT_NAME = _PLUGIN_NAME
+PRODUCT_NAME = "EVParts {} Plugin".format(
+    _PLUGIN_NAME.replace("_", " ").title()
+)
+
 DEVICE_INSTANCE = 0
 PRODUCT_ID = 0xFFFF
 FIRMWARE_VERSION = VERSION
@@ -65,9 +68,58 @@ def start_dbus():
         )
         _main_loop_thread.start()
 
+def _get_device_instance():
+    """Reserve and retrieve a unique switch DeviceInstance."""
+
+    bus = dbus.SystemBus()
+
+    # Reserve an instance through Local Settings.
+    settings_object = bus.get_object(
+        "com.victronenergy.settings",
+        "/Settings/Devices",
+    )
+    settings = dbus.Interface(
+        settings_object,
+        "com.victronenergy.Settings",
+    )
+
+    settings.AddSetting(
+        _PLUGIN_NAME,
+        "ClassAndVrmInstance",
+        "switch:0",
+        "s",
+        "",
+        "",
+    )
+
+    # Read back the allocated instance.
+    setting_path = (
+        "/Settings/Devices/{}/ClassAndVrmInstance".format(_PLUGIN_NAME)
+    )
+
+    setting_object = bus.get_object(
+        "com.victronenergy.settings",
+        setting_path,
+    )
+    setting = dbus.Interface(
+        setting_object,
+        "com.victronenergy.BusItem",
+    )
+
+    class_and_instance = str(setting.GetValue())
+    device_class, instance = class_and_instance.split(":", 1)
+
+    if device_class != "switch":
+        raise ValueError(
+            "Unexpected device class: {}".format(device_class)
+        )
+
+    return int(instance)
 
 def create_service():
     """Create the plugin service and add its mandatory D-Bus paths."""
+    device_instance = _get_device_instance()
+
     service_name = "com.victronenergy.switch.{}".format(_PLUGIN_NAME)
     service = VeDbusService(service_name, register=False)
 
@@ -75,7 +127,7 @@ def create_service():
         _PLUGIN_FILE,
         VERSION,
         "Python",
-        DEVICE_INSTANCE,
+        device_instance,
         PRODUCT_ID,
         PRODUCT_NAME,
         FIRMWARE_VERSION,
