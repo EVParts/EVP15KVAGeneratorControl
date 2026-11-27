@@ -172,65 +172,65 @@ class GeneratorController():
             "relay_0": {"service": "com.victronenergy.system", "path": "/Relay/0/State"},
             "relay_1": {"service": "com.victronenergy.system", "path": "/Relay/1/State"},
             "relay_2": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/off_button_led/State"
             },
             "relay_3": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/on_button_led/State"
             },
             "relay_4": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/charge_button_led/State"
             },
             "relay_5": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/bms_wake/State"
             },
             "relay_6": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/dse_remote_start/State"
             },
             "relay_7": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/dse_lock_keypad_mode/State"
             },
             "relay_8": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/earth_leakage_reset/State"
             },
             "relay_9": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/SwitchableOutput/reverse_power_detection/State"
             },
             "quattro_inverter_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Inverter"},
             "quattro_mains_led": {"service": "com.victronenergy.vebus.ttyS2", "path": "/Leds/Mains"},
             "input_off_button": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/off_button/Value"
             },
             "input_on_button": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/on_button/Value"
             },
             "input_charge_button": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/charge_button/Value"
             },
             "input_off_button_led_state": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/off_button_led_state/Value"
             },
             "input_on_button_led_state": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/on_button_led_state/Value"
             },
             "input_charge_button_led_state": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/charge_button_led_state/Value"
             },
             "input_bms_wake_state": {
-                "service": "com.victronenergy.switch.genset",
+                "service": "com.victronenergy.switch.genset_io",
                 "path": "/GenericInput/bms_wake_state/Value"
             },
         }
