@@ -100,7 +100,7 @@ class GeneratorController():
         self.can_flags_BBMSPower = None
         self.can_flags_BIgnition = None
 
-        self.plugin_state = create_generic_input(
+        self.dbusinput_plugin_state = create_generic_input(
             service_name="com.victronenergy.switch.generator_control",
             index="generator_control_state",
             name="Genset Control State",
@@ -109,12 +109,44 @@ class GeneratorController():
             group="Plugins"
         )
 
-        self.plugin_state_timer = create_generic_input(
+        self.dbusinput_plugin_state_timer = create_generic_input(
             service_name="com.victronenergy.switch.generator_control",
             index="generator_control_state_timer",
             name="Genset Control State Timer",
             value=0,
             group="Plugins"
+        )
+
+        self.dbusinput_bms_state = create_generic_input(
+            service_name="com.victronenergy.switch.generator_control",
+            index="bms_ccs_state",
+            name="BMS State",
+            value=0,
+            labels=["Off",
+                    "Run",
+                    "Charge",
+                    "PreCharge",
+                    "Shutdown",
+                    "Init",
+                    "eStop",
+                    "Error"],
+            group="BMS"
+        )
+
+        self.dbusinput_bms_flags = create_generic_input(
+            service_name="com.victronenergy.switch.generator_control",
+            index="bms_ccs_flags",
+            name="BMS Status Flags",
+            value=0,
+            group="BMS"
+        )
+
+        self.dbusinput_bms_can_age = create_generic_input(
+            service_name="com.victronenergy.switch.generator_control",
+            index="bms_ccs_a_frame_age",
+            name="BMS CAN Frame Age",
+            value=0,
+            group="BMS"
         )
 
         if PROFILEMEMORY:
@@ -419,8 +451,8 @@ class GeneratorController():
             self.mode_entry_time = time()
             self.store_state()
 
-        update_generic_input(self.plugin_state, {"Off": 1, "On": 2, "ChargeOnly": 3}.get(self.Mode, 0))
-        update_generic_input(self.plugin_state_timer, self.generator_mode_time)
+        update_generic_input(self.dbusinput_plugin_state, {"Off": 1, "On": 2, "ChargeOnly": 3}.get(self.Mode, 0))
+        update_generic_input(self.dbusinput_plugin_state_timer, self.generator_mode_time)
 
     def get_dbus_value(self, dbus_item_name: str):
         if (dbus_item := self.dbus_items.get(dbus_item_name)) is not None:
@@ -677,6 +709,7 @@ class GeneratorController():
 
         log["CCS_A"] = self.print_ccs_a_frame()
 
+
         for log_type in log.keys():
             changed = log[log_type] != self._last_log.get(log_type)
 
@@ -868,6 +901,10 @@ class GeneratorController():
                           5: "Init",
                           6: "eStop",
                           7: "Error"}
+
+            update_generic_input(self.dbusinput_bms_state, state)
+            update_generic_input(self.dbusinput_bms_flags, flags)
+            update_generic_input(self.dbusinput_bms_can_age, a_frame.get("age_ms"))
 
             return (
                 f"Age={a_frame.get("age_ms"):5.1f}ms, "
