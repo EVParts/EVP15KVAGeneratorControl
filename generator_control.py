@@ -100,10 +100,11 @@ class GeneratorController():
         self.can_flags_BBMSPower = None
         self.can_flags_BIgnition = None
 
-        service = create_service()
+        start_dbus()
+        self.service = create_service()
 
         self.dbusinput_plugin_state = create_input(
-            service=service,
+            service=self.service,
             index="generator_control_state",
             name="Genset Control State",
             value=0,
@@ -112,7 +113,7 @@ class GeneratorController():
         )
 
         self.dbusinput_plugin_state_timer = create_input(
-            service=service,
+            service=self.service,
             index="generator_control_state_timer",
             name="Genset Control State Timer",
             value=0,
@@ -120,7 +121,7 @@ class GeneratorController():
         )
 
         self.dbusinput_bms_state = create_input(
-            service=service,
+            service=self.service,
             index="bms_ccs_state",
             name="BMS State",
             value=0,
@@ -136,7 +137,7 @@ class GeneratorController():
         )
 
         self.dbusinput_bms_flags = create_input(
-            service=service,
+            service=self.service,
             index="bms_ccs_flags",
             name="BMS Status Flags",
             value=0,
@@ -144,14 +145,15 @@ class GeneratorController():
         )
 
         self.dbusinput_bms_can_age = create_input(
-            service=service,
+            service=self.service,
             index="bms_ccs_a_frame_age",
             name="BMS CAN Frame Age",
             value=0,
             group="BMS"
         )
 
-        start_dbus()
+        # Register after all paths and initial values have been added.
+        self.service.register()
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
