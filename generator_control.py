@@ -12,7 +12,7 @@ from os.path import join, dirname, exists
 from pprint import pprint, pformat
 from time import time, sleep, monotonic
 
-from generic_input import create_generic_input, update_generic_input
+from plugin_dbus import create_input, update_input, create_service
 
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
@@ -100,7 +100,9 @@ class GeneratorController():
         self.can_flags_BBMSPower = None
         self.can_flags_BIgnition = None
 
-        self.dbusinput_plugin_state = create_generic_input(
+        service = create_service()
+
+        self.dbusinput_plugin_state = create_input(
             service_name="com.victronenergy.switch.generator_control",
             index="generator_control_state",
             name="Genset Control State",
@@ -109,7 +111,7 @@ class GeneratorController():
             group="Plugins"
         )
 
-        self.dbusinput_plugin_state_timer = create_generic_input(
+        self.dbusinput_plugin_state_timer = create_input(
             service_name="com.victronenergy.switch.generator_control",
             index="generator_control_state_timer",
             name="Genset Control State Timer",
@@ -117,7 +119,7 @@ class GeneratorController():
             group="Plugins"
         )
 
-        self.dbusinput_bms_state = create_generic_input(
+        self.dbusinput_bms_state = create_input(
             service_name="com.victronenergy.switch.generator_control",
             index="bms_ccs_state",
             name="BMS State",
@@ -133,7 +135,7 @@ class GeneratorController():
             group="BMS"
         )
 
-        self.dbusinput_bms_flags = create_generic_input(
+        self.dbusinput_bms_flags = create_input(
             service_name="com.victronenergy.switch.generator_control",
             index="bms_ccs_flags",
             name="BMS Status Flags",
@@ -141,13 +143,15 @@ class GeneratorController():
             group="BMS"
         )
 
-        self.dbusinput_bms_can_age = create_generic_input(
+        self.dbusinput_bms_can_age = create_input(
             service_name="com.victronenergy.switch.generator_control",
             index="bms_ccs_a_frame_age",
             name="BMS CAN Frame Age",
             value=0,
             group="BMS"
         )
+
+        service.register()
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
@@ -451,8 +455,8 @@ class GeneratorController():
             self.mode_entry_time = time()
             self.store_state()
 
-        update_generic_input(self.dbusinput_plugin_state, {"Off": 1, "On": 2, "ChargeOnly": 3}.get(self.Mode, 0))
-        update_generic_input(self.dbusinput_plugin_state_timer, self.generator_mode_time)
+        update_input(self.dbusinput_plugin_state, {"Off": 1, "On": 2, "ChargeOnly": 3}.get(self.Mode, 0))
+        update_input(self.dbusinput_plugin_state_timer, self.generator_mode_time)
 
     def get_dbus_value(self, dbus_item_name: str):
         if (dbus_item := self.dbus_items.get(dbus_item_name)) is not None:
@@ -902,9 +906,9 @@ class GeneratorController():
                           6: "eStop",
                           7: "Error"}
 
-            update_generic_input(self.dbusinput_bms_state, state)
-            update_generic_input(self.dbusinput_bms_flags, flags)
-            update_generic_input(self.dbusinput_bms_can_age, a_frame.get("age_ms"))
+            update_input(self.dbusinput_bms_state, state)
+            update_input(self.dbusinput_bms_flags, flags)
+            update_input(self.dbusinput_bms_can_age, a_frame.get("age_ms"))
 
             return (
                 f"Age={a_frame.get("age_ms"):5.1f}ms, "
