@@ -12,7 +12,7 @@ from os.path import join, dirname, exists
 from pprint import pprint, pformat
 from time import time, sleep, monotonic
 
-from plugin_dbus import create_input, update_input, create_service
+from plugin_dbus import create_input, update_input, create_service, start_dbus
 
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
@@ -151,7 +151,7 @@ class GeneratorController():
             group="BMS"
         )
 
-        service.register()
+        start_dbus()
 
         if PROFILEMEMORY:
             self._initial_snapshot = None
